@@ -8,6 +8,8 @@ on:
   pull_request:
     branches:
       - master
+  schedule:
+    - cron: '0 0 * * *'
 
 jobs:
   Build:
@@ -86,7 +88,18 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake .. ${{ matrix.CMAKE_OPTIONS }}
+          OPTIONS=
+          if [[ $GITHUB_EVENT_NAME == 'schedule' && -n '${{ matrix.release }}' ]]; then
+            git remote add nightly https://${{ secrets.GITHUB_TOKEN }}@github.com/Kha/lean4-nightly.git
+            git fetch nightly --tags
+            LEAN_VERSION_STRING="nightly-$(date -u +%F)"
+            # do nothing if commit is already tagged
+            if git checkout $LEAN_VERSION_STRING || ! git name-rev --name-only --tags --no-undefined HEAD; then
+              OPTIONS=-DLEAN_SPECIAL_VERSION_DESC=$LEAN_VERSION_STRING
+              echo "LEAN_VERSION_STRING=$LEAN_VERSION_STRING" >> $GITHUB_ENV
+            fi
+          fi
+          cmake .. ${{ matrix.CMAKE_OPTIONS }} $OPTIONS
           make -j4
       # de-Nix-ify binaries
       - name: Patch
@@ -141,5 +154,39 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/v') && matrix.release }}
         with:
           files: build/stage1/lean-*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Prepare Nightly Release
+        if: env.LEAN_VERSION_STRING
+        run: |
+          if [ -z "$LEAN_VERSION_STRING" ]; then
+            echo "LEAN_VERSION_STRING=" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          # technically a race condition...
+          git fetch nightly --tags
+          if git tag $LEAN_VERSION_STRING; then
+            git push nightly $LEAN_VERSION_STRING
+          else
+            # make sure every runner is building the same commit
+            [ $(git rev-parse HEAD) == $(git rev-parse $LEAN_VERSION_STRING) ] || exit 1
+          fi
+
+          last_tag=$(git describe @^ --abbrev=0 --tags)
+          #echo -e "Changes since ${last_tag}:\n\n" > diff.md
+          #git show $last_tag:doc/changes.md > old.md
+          #./script/diff_changelogs.py old.md doc/changes.md >> diff.md
+          echo -e "*Full commit log*\n" >> diff.md
+          git log --oneline $last_tag..HEAD | sed 's/^/* /' >> diff.md
+      - name: Release Nightly
+        uses: softprops/action-gh-release@v1
+        if: env.LEAN_VERSION_STRING
+        with:
+          body_path: diff.md
+          prerelease: true
+          files: build/stage1/lean-*
+          tag_name: ${{ env.LEAN_VERSION_STRING }}
+          repository: Kha/lean4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
