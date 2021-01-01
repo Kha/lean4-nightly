@@ -89,7 +89,7 @@ jobs:
           mkdir build
           cd build
           OPTIONS=
-          if [[ $GITHUB_EVENT_NAME == 'schedule' && -n '${{ matrix.release }}' ]]; then
+          if [[ -n '${{ matrix.release }}' ]]; then
             git remote add nightly https://${{ secrets.GITHUB_TOKEN }}@github.com/Kha/lean4-nightly.git
             git fetch nightly --tags
             LEAN_VERSION_STRING="nightly-$(date -u +%F)"
