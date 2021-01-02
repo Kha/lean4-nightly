@@ -16,7 +16,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        shell: ${{ matrix.shell || 'nix-shell --run "bash -euo pipefail {0}"' }}
+        shell: ${{ matrix.shell || 'nix-shell --run "bash -euxo pipefail {0}"' }}
     strategy:
       matrix:
         include:
@@ -25,7 +25,7 @@ jobs:
             os: ubuntu-latest
             release: true
             CMAKE_OPTIONS: -DSTATIC=ON
-            shell: nix-shell --arg pkgs "import (fetchTarball \"channel:nixos-19.03\") {{}}" --argstr llvmPackages latest --run "bash -euo pipefail {0}"
+            shell: nix-shell --arg pkgs "import (fetchTarball \"channel:nixos-19.03\") {{}}" --argstr llvmPackages latest --run "bash -euxo pipefail {0}"
           - name: Linux
             os: ubuntu-latest
             check-stage3: true
