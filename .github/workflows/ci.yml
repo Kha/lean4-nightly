@@ -164,10 +164,8 @@ jobs:
         run: |
           # can't push shallow checkout
           git fetch --unshallow
-          # technically a race condition...
           git fetch nightly --tags
-          if git tag $LEAN_VERSION_STRING; then
-            git push nightly $LEAN_VERSION_STRING
+          if git tag $LEAN_VERSION_STRING && git push nightly $LEAN_VERSION_STRING; then
             last_tag=$(git describe HEAD^ --abbrev=0 --tags)
             echo -e "Changes since ${last_tag}:\n\n" > diff.md
             #git show $last_tag:doc/changes.md > old.md
