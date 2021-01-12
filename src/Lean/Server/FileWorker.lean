@@ -429,7 +429,7 @@ section MainLoop
     | _ => throwServerError "Got invalid JSON-RPC message"
 end MainLoop
 
-def initAndRunWorker (i o e : FS.Stream) : IO Unit := do
+def initAndRunWorker (i o e : FS.Stream) : IO UInt32 := do
   let i ← maybeTee "fwIn.txt" false i
   let o ← maybeTee "fwOut.txt" true o
   -- TODO(WN): act in accordance with InitializeParams
@@ -444,7 +444,21 @@ def initAndRunWorker (i o e : FS.Stream) : IO Unit := do
     docRef             := ←IO.mkRef arbitrary
     pendingRequestsRef := ←IO.mkRef (RBMap.empty : PendingRequestMap)
   }
-  ReaderT.run (do handleDidOpen param; mainLoop) ctx
+  ReaderT.run (r := ctx) try
+    handleDidOpen param
+    mainLoop
+    return 0
+  catch e =>
+    o.writeLspNotification {
+      method := "textDocument/publishDiagnostics"
+      param  := {
+        uri         := param.textDocument.uri
+        version?    := param.textDocument.version
+        diagnostics := #[{ range := ⟨⟨0, 0⟩, ⟨0, 0⟩⟩, severity? := DiagnosticSeverity.error, message := e.toString }]
+        : PublishDiagnosticsParams
+      }
+    }
+    return 1
 
 @[export lean_server_worker_main]
 def workerMain : IO UInt32 := do
@@ -453,9 +467,8 @@ def workerMain : IO UInt32 := do
   let e ← IO.getStderr
   try
     initAndRunWorker i o e
-    return 0
   catch err =>
-    e.putStrLn s!"Worker error: {err}"
+    e.putStrLn s!"worker initialization error: {err}"
     return 1
 
 end Lean.Server.FileWorker
