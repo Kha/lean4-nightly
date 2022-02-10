@@ -14,7 +14,7 @@ on:
 jobs:
   set-nightly:
     # don't schedule nightlies on forks
-    if: github.event_name == 'schedule' && github.repository == 'leanprover/lean4'
+    #if: github.event_name == 'schedule' && github.repository == 'leanprover/lean4'
     runs-on: ubuntu-latest
     outputs:
       nightly: ${{ steps.set.outputs.nightly }}
@@ -107,45 +107,16 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: clang64
-          install: make python mingw-w64-clang-x86_64-cmake mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-ccache git zip unzip diffutils binutils tree mingw-w64-clang-x86_64-zstd tar
+          install: mingw-w64-clang-x86_64-zstd tar
         if: matrix.os == 'windows-2022'
       - name: Install Brew Packages
         run: |
           brew install ccache tree zstd coreutils
         if: matrix.os == 'macos-latest'
-      - name: Cache
-        uses: actions/cache@v2
-        with:
-          path: .ccache
-          key: ${{ matrix.name }}-build-${{ github.sha }}
-          # fall back to (latest) previous cache
-          restore-keys: |
-            ${{ matrix.name }}-build
-      - name: Setup
-        run: |
-          # open nix-shell once for initial setup
-          true
-        if: matrix.os == 'ubuntu-latest'
       - name: Build
         run: |
-          mkdir build
-          cd build
-          OPTIONS=()
-          [[ -z '${{ matrix.llvm-url }}' ]] || wget -q ${{ matrix.llvm-url }}
-          [[ -z '${{ matrix.prepare-llvm }}' ]] || eval "OPTIONS+=($(../${{ matrix.prepare-llvm }}))"
-          if [[ -n '${{ matrix.release }}' && -n '${{ needs.set-nightly.outputs.nightly }}' ]]; then
-            OPTIONS+=(-DLEAN_SPECIAL_VERSION_DESC=${{ needs.set-nightly.outputs.nightly }})
-          fi
-          # contortion to support empty OPTIONS with old macOS bash
-          cmake .. ${{ matrix.CMAKE_OPTIONS }} ${OPTIONS[@]+"${OPTIONS[@]}"} -DLEAN_INSTALL_PREFIX=$PWD/..
-          make -j4
-          make install
-      - name: Check Binaries
-        run: ${{ matrix.binary-check }} lean-*/bin/* || true
-      - name: List Install Tree
-        run: |
-          # omit contents of Init/, ...
-          tree --du -h lean-* | grep -E ' (Init|Std|Lean|Lake|LICENSE|[a-z])'
+        mkdir lean-foo
+        touch lean-foo/lean
       - name: Pack
         run: |
           dir=$(echo lean-*)
@@ -162,39 +133,7 @@ jobs:
         with:
           name: build-${{ matrix.name }}
           path: pack/*
-      - name: Lean stats
-        run: |
-          build/stage1/bin/lean --stats src/Lean.lean
-      - name: Test
-        run: |
-          cd build/stage1
-          ctest -j4 --output-on-failure ${{ matrix.CTEST_OPTIONS }} < /dev/null
-      - name: Check Test Binary
-        run: ${{ matrix.binary-check }} tests/compiler/534.lean.out
-      - name: Build Stage 2
-        run: |
-          cd build
-          make -j4 stage2
-        if: matrix.build-stage2 || matrix.check-stage3
-      - name: Check Stage 3
-        run: |
-          cd build
-          make -j4 check-stage3
-        if: matrix.check-stage3
-      - name: Test Speedcenter Benchmarks
-        run: |
-          echo -1 | sudo tee /proc/sys/kernel/perf_event_paranoid
-          export BUILD=$PWD/build PATH=$PWD/build/stage1/bin:$PATH
-          nix-shell -A with-temci --run "cd tests/bench; temci exec --config speedcenter.yaml --included_blocks fast --runs 1"
-        if: matrix.test-speedcenter
-      - name: Check rebootstrap
-        run: |
-          cd build
-          make update-stage0 && make -j4
-        if: matrix.name == 'Linux'
-      - name: CCache stats
-        run: ccache -s
-        
+
   release:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
@@ -237,12 +176,13 @@ jobs:
           diff --changed-group-format='%>' --unchanged-group-format='' old.md RELEASES.md >> diff.md
           echo -e "\n*Full commit log*\n" >> diff.md
           git log --oneline $last_tag..HEAD | sed 's/^/* /' >> diff.md
+          ls -lR
       - name: Release Nightly
         uses: softprops/action-gh-release@v1
         with:
           body_path: diff.md
           prerelease: true
-          files: artifacts/*/*
+          files: artifacts/*/*.zip
           tag_name: ${{ needs.set-nightly.outputs.nightly }}
           repository: ${{ github.repository_owner }}/lean4-nightly
         env:
